@@ -39,13 +39,12 @@ namespace utility
         private static void AddToLog(string message)
         {
             string logtext = string.Format("{0:s} [{1}] {2}", DateTime.Now, System.Threading.Thread.CurrentThread.ManagedThreadId, message);
-            //GBM.Instrumentation.LogManager.LogInformation(InformationEventID, logtext);
             System.Diagnostics.Trace.WriteLine(logtext);
         }
 
         private static void AddToLog(string method, Exception exception)
         {
-            int eventId = 0; //GBM.Instrumentation.LogManager.LogExceptionWithRandomEventId(exception);
+            int eventId = 0;
             System.Diagnostics.Trace.WriteLine(string.Format("Log method: {0} EventID: {1}. Message: {2}", method, eventId, exception.Message));
         }
     }
