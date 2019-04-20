@@ -134,10 +134,10 @@ namespace utility
         /// <param name="retry_milliseconds">The retry milliseconds. The utility static method RetryTimeOfDayTimer.ReadTimerConfiguration could be useful to get this value. Default 60000.</param>
         /// <param name="weekend_disable">True if the operation must not be invoked at System.DayOfWeek.Saturday or System.DayOfWeek.Sunday days. Default false.</param>
         /// <param name="id">Identification label for this instance of the timer. Default null.</param>
-        /// <param name="milliseconds_precision">Minimum amount of milliseconds between DayTimes; also, between DateTime.Now and the next scheduled timer run. Default 500ms.</param>
+        /// <param name="milliseconds_precision">Minimum amount of milliseconds between DayTimes; also, between DateTime.Now and the next scheduled timer event. Default 500ms.</param>
         public RetryTimeOfDayTimer(IEnumerable<TimeSpan> when, Func<bool> operation, int retry_limit = 3, int retry_milliseconds = 60000, bool weekend_disable = false, string id = null, double milliseconds_precision = DefaultMillisecondsPrecision)
         {
-            this.ID = string.IsNullOrWhiteSpace(id) ? string.Format("ID_{0}", DateTime.Now.ToString("MMMdd-HHmmss-fffffff")) : id;
+            this.ID = string.IsNullOrWhiteSpace(id) ? string.Format("ID_{0}", DateTime.Now.ToString("yyyyMMdd-HHmmss-fffffff")) : id;
             Reset(when, operation, retry_limit, retry_milliseconds, weekend_disable, milliseconds_precision);
         }
 
@@ -193,9 +193,9 @@ namespace utility
             }
             #endregion
 
-            this.Operation = operation;
+            Operation = operation;
             var positivewhen = when.Aggregate(new List<TimeSpan>(), (whole, next) => { whole.Add(next.Duration()); return whole; });
-            this.InvokeDayTimes = new List<TimeSpan>();
+            InvokeDayTimes = new List<TimeSpan>();
             var previous = TimeSpan.Zero;
             foreach (TimeSpan daytime in positivewhen.OrderBy(time => time))
             {
@@ -210,18 +210,18 @@ namespace utility
                 InvokeDayTimes.Add(daytime);
                 previous = daytime;
             }
-            ResultLogger.LogSuccess(string.Format(ID + " InvokeDayTime: {0}", this.InvokeDayTimes.Aggregate(new StringBuilder(), (whole, next) => { whole.AppendFormat("{0},", next); return whole; })));
+            ResultLogger.LogSuccess($"{ID} InvokeDayTime: {InvokeDayTimes.Aggregate(new StringBuilder(), (whole, next) => { whole.AppendFormat("{0},", next); return whole; })}");
             StartNextInvokeTimer();
         }
 
         private void StartNextInvokeTimer(int retry = 0)
         {
-            if (this.MainTimer != null)
+            if (MainTimer != null)
             {
                 DisposeTimer();
             }
             nextinvoke = retry == 0 ? GetNextInvokeTimeSpan() : TimeSpan.FromMilliseconds(retry);
-            this.MainTimer = new System.Threading.Timer(this.TimerInvoke, null, nextinvoke, TimeSpan.FromMilliseconds(-1D));
+            MainTimer = new System.Threading.Timer(TimerInvoke, null, nextinvoke, TimeSpan.FromMilliseconds(-1D));
             ResultLogger.LogSuccess(ID + " Next invoke:" + nextinvoke);
         }
 
@@ -291,22 +291,24 @@ namespace utility
         public TimeSpan GetNextInvokeTimeSpan()
         {
             var result = TimeSpan.Zero;
-            var now = GetCurrentTimeOfDay();
-            //ResultLogger.LogSuccess(ID + " Now.TimeOfDay:" + now);
-            var nowAndFutures = this.InvokeDayTimes.Where(time => time.CompareTo(now) >= 0);
-            if (nowAndFutures.Count() > 0)
+            foreach (var nextDayTime in InvokeDayTimes)
             {
-                var nextDayTime = nowAndFutures.GetEnumerator();
-                do
+                var now = GetCurrentTimeOfDay();
+                //ResultLogger.LogSuccess($"{ID} Now.TimeOfDay: {now}");
+                TimeSpan diff = nextDayTime - now;
+                if (diff.TotalMilliseconds >= MillisecondsPrecision)
                 {
-                    result = TimeSpan.Zero;
-                    TimeSpan diff = nextDayTime.Current - GetCurrentTimeOfDay();
-                    if (diff.TotalMilliseconds >= MillisecondsPrecision)
+                    result = diff;
+                    break;
+                }
+                else
+                {
+                    if (diff.TotalMilliseconds > 0D)
                     {
-                        result = diff;
-                        break;
+                        ResultLogger.LogSuccess($"WARN: {ID} TimeOfDay ({nextDayTime}) is skipped because it and current TimeOfDay ({now}) are closer ({diff}) than default or configured milliseconds precision ({MillisecondsPrecision}).");
+                        //throw new InvalidOperationException($"{ID} TimeOfDay ({nextDayTime}) is not supported because it and current TimeOfDay ({now}) are closer ({diff}) than default or configured milliseconds precision ({MillisecondsPrecision}).");
                     }
-                } while (nextDayTime.MoveNext());
+                }
             }
             if(result == TimeSpan.Zero)
             {

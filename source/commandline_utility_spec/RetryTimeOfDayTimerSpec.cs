@@ -1,10 +1,7 @@
 ﻿using System;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System.Configuration;
 using System.Collections.Generic;
-using System.Text;
-using System.Collections.Specialized;
 using System.Diagnostics;
 
 namespace TimeOfDayTimerSpec
@@ -96,6 +93,66 @@ namespace TimeOfDayTimerSpec
             Assert.Fail("timer did not throw");
         }
 
+        [TestMethod, TestCategory("TimeOfDay")]
+        public void Precision_Mismatch2()
+        {
+            //Arrange
+            var daytime = DateTime.Now;
+            var when = new List<TimeSpan>()
+            {
+                daytime.TimeOfDay,
+                daytime.AddMilliseconds(10D).TimeOfDay
+            };
+            bool operation() => false;
+            Exception exception = null;
+
+            //Act
+            try
+            {
+                using (var timer = new utility.RetryTimeOfDayTimer(when, operation)) { }
+            }
+            catch (System.Configuration.ConfigurationErrorsException ex)
+            {
+                exception = ex;
+                Trace.WriteLine(ex.Message);
+            }
+
+            //Assert
+            Assert.IsNotNull(exception);
+            Assert.AreEqual(true, exception?.Message.Contains("are closer than default or configured milliseconds precision"));
+        }
+
+        [TestMethod, TestCategory("TimeOfDay"), Ignore]
+        public void Precision_Mismatch3()
+        {
+            //Arrange
+            T t = new TimeOfDayTimerSpec.RetryTimeOfDayTimerSpec.T
+            (
+                new List<TimeSpan>()
+                {
+                    TimeSpan.Parse("08:00:00"),
+                    TimeSpan.Parse("08:00:03")
+                },
+                milliseconds_precision: 2000D
+            );
+            t.timeOfDay = TimeSpan.Parse("08:00:02");
+            InvalidOperationException exception = null;
+
+            //Act
+            try
+            {
+                var next = t.GetNextInvokeTimeSpan();
+            }
+            catch (InvalidOperationException ex)
+            {
+                exception = ex;
+            }
+
+            //Assert
+            Assert.IsNotNull(exception);
+            Assert.IsTrue(exception.Message.Contains("are closer"), exception.Message);
+        }
+
         [TestMethod, ExpectedException(typeof(System.ArgumentOutOfRangeException)), TestCategory("TimeOfDay")]
         public void Precision_OutOfRange()
         {
@@ -111,6 +168,32 @@ namespace TimeOfDayTimerSpec
 
             //Assert
             Assert.Fail("timer did not throw");
+        }
+
+        [TestMethod, TestCategory("TimeOfDay")]
+        public void Precision_OutOfRange2()
+        {
+            //Arrange
+            var when = new List<TimeSpan>()
+            {
+                DateTime.Now.AddSeconds(5D).TimeOfDay
+            };
+            bool operation() => false;
+            Exception exception = null;
+
+            //Act
+            try
+            {
+                using (var timer = new utility.RetryTimeOfDayTimer(when, operation, milliseconds_precision: 0D)) { }
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                exception = ex;
+            }
+
+            //Assert
+            Assert.IsNotNull(exception);
+            Assert.AreEqual(true, exception?.Message.Contains("milliseconds_precision must be positive."));
         }
 
         [TestMethod, ExpectedException(typeof(System.Configuration.ConfigurationErrorsException)), TestCategory("TimeOfDay")]
@@ -183,6 +266,32 @@ namespace TimeOfDayTimerSpec
             using (var timer = new utility.RetryTimeOfDayTimer(when, operation, 3, 2000))
             {
                 System.Threading.Thread.Sleep(10000);
+            }
+
+            //Assert
+            Assert.AreEqual<int>(2, invokes.Count);
+        }
+
+        [TestMethod, TestCategory("TimeOfDay")]
+        public void Precision_Default2()
+        {
+            //Arrange
+            var when = new List<TimeSpan>()
+            {
+                DateTime.Now.AddSeconds(3).TimeOfDay,
+                DateTime.Now.AddSeconds(5).TimeOfDay
+            };
+            var invokes = new List<TimeSpan>();
+            bool operation()
+            {
+                invokes.Add(DateTime.Now.TimeOfDay);
+                return true;
+            };
+
+            //Act
+            using (var timer = new utility.RetryTimeOfDayTimer(when, operation, 3, 2000, id: "T1", milliseconds_precision: 1900D))
+            {
+                System.Threading.Thread.Sleep(9000);
             }
 
             //Assert
@@ -269,6 +378,28 @@ namespace TimeOfDayTimerSpec
 
             //Assert
             Assert.AreEqual<TimeSpan>(TimeSpan.Parse("00:00:01.1"), next);
+        }
+
+        [TestMethod, TestCategory("TimeOfDay")]
+        public void DuplicateTrigger_BasicCheck2a()
+        {
+            //Arrange
+            T t = new TimeOfDayTimerSpec.RetryTimeOfDayTimerSpec.T
+            (
+                new List<TimeSpan>()
+                {
+                    TimeSpan.Parse("08:00:00"),
+                    TimeSpan.Parse("08:00:01")
+                },
+                50D
+            );
+
+            //Act
+            t.timeOfDay = TimeSpan.Parse("07:59:59.9");
+            var next = t.GetNextInvokeTimeSpan();
+
+            //Assert
+            Assert.AreEqual<TimeSpan>(TimeSpan.Parse("00:00:00.1"), next);
         }
 
         [TestMethod, TestCategory("TimeOfDay")]
